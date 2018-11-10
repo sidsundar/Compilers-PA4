@@ -21,8 +21,10 @@ private:
    int stringclasstag;
    int intclasstag;
    int boolclasstag;
+   int last_tag = 3;
 
 
+   CgenNodeP lookup_by_tag(int tag);
 // The following methods emit code for
 // constants and global declarations.
 
@@ -31,6 +33,8 @@ private:
    void code_bools(int);
    void code_select_gc();
    void code_constants();
+   void code_proto_objects();
+   void code_classnames();
 
 // The following creates an inheritance graph from
 // a list of classes.  The graph is implemented as
@@ -55,17 +59,24 @@ private:
    List<CgenNode> *children;                  // Children of class
    Basicness basic_status;                    // `Basic' if class is basic
                                               // `NotBasic' otherwise
+   int class_tag;
 
 public:
    CgenNode(Class_ c,
             Basicness bstatus,
-            CgenClassTableP class_table);
+            CgenClassTableP class_table,
+            int tag);
 
    void add_child(CgenNodeP child);
    List<CgenNode> *get_children() { return children; }
    void set_parentnd(CgenNodeP p);
    CgenNodeP get_parentnd() { return parentnd; }
    int basic() { return (basic_status == Basic); }
+   Symbol get_name()  { return name; }
+   int get_tag() { return class_tag; }
+   void code_proto_object(ostream& str);
+   int code_proto_attrs(ostream& str, bool print=true);
+   void code_methods();
 };
 
 class BoolConst 

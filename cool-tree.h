@@ -19,7 +19,7 @@ typedef class Program_class *Program;
 
 class Program_class : public tree_node {
 public:
-   tree_node *copy()		 { return copy_Program(); }
+   tree_node *copy()     { return copy_Program(); }
    virtual Program copy_Program() = 0;
 
 #ifdef Program_EXTRAS
@@ -33,7 +33,7 @@ typedef class Class__class *Class_;
 
 class Class__class : public tree_node {
 public:
-   tree_node *copy()		 { return copy_Class_(); }
+   tree_node *copy()     { return copy_Class_(); }
    virtual Class_ copy_Class_() = 0;
 
 #ifdef Class__EXTRAS
@@ -47,8 +47,11 @@ typedef class Feature_class *Feature;
 
 class Feature_class : public tree_node {
 public:
-   tree_node *copy()		 { return copy_Feature(); }
+   tree_node *copy()     { return copy_Feature(); }
    virtual Feature copy_Feature() = 0;
+   virtual Symbol get_name() = 0;
+   virtual Symbol get_type() = 0;
+   virtual bool is_attr() = 0;
 
 #ifdef Feature_EXTRAS
    Feature_EXTRAS
@@ -61,7 +64,7 @@ typedef class Formal_class *Formal;
 
 class Formal_class : public tree_node {
 public:
-   tree_node *copy()		 { return copy_Formal(); }
+   tree_node *copy()     { return copy_Formal(); }
    virtual Formal copy_Formal() = 0;
 
 #ifdef Formal_EXTRAS
@@ -75,7 +78,7 @@ typedef class Expression_class *Expression;
 
 class Expression_class : public tree_node {
 public:
-   tree_node *copy()		 { return copy_Expression(); }
+   tree_node *copy()     { return copy_Expression(); }
    virtual Expression copy_Expression() = 0;
 
 #ifdef Expression_EXTRAS
@@ -89,7 +92,7 @@ typedef class Case_class *Case;
 
 class Case_class : public tree_node {
 public:
-   tree_node *copy()		 { return copy_Case(); }
+   tree_node *copy()     { return copy_Case(); }
    virtual Case copy_Case() = 0;
 
 #ifdef Case_EXTRAS
@@ -127,7 +130,7 @@ typedef Cases_class *Cases;
 // define the class for constructors
 // define constructor - program
 class program_class : public Program_class {
-public:
+protected:
    Classes classes;
 public:
    program_class(Classes a1) {
@@ -147,7 +150,7 @@ public:
 
 // define constructor - class_
 class class__class : public Class__class {
-public:
+protected:
    Symbol name;
    Symbol parent;
    Features features;
@@ -173,7 +176,7 @@ public:
 
 // define constructor - method
 class method_class : public Feature_class {
-public:
+protected:
    Symbol name;
    Formals formals;
    Symbol return_type;
@@ -187,6 +190,9 @@ public:
    }
    Feature copy_Feature();
    void dump(ostream& stream, int n);
+   Symbol get_name() {return name;}
+   Symbol get_type() {return return_type;}
+   bool is_attr() {return false;}
 
 #ifdef Feature_SHARED_EXTRAS
    Feature_SHARED_EXTRAS
@@ -199,7 +205,7 @@ public:
 
 // define constructor - attr
 class attr_class : public Feature_class {
-public:
+protected:
    Symbol name;
    Symbol type_decl;
    Expression init;
@@ -211,6 +217,9 @@ public:
    }
    Feature copy_Feature();
    void dump(ostream& stream, int n);
+   Symbol get_name() {return name;}
+   Symbol get_type() {return type_decl;}
+   bool is_attr() {return true;}
 
 #ifdef Feature_SHARED_EXTRAS
    Feature_SHARED_EXTRAS
@@ -223,7 +232,7 @@ public:
 
 // define constructor - formal
 class formal_class : public Formal_class {
-public:
+protected:
    Symbol name;
    Symbol type_decl;
 public:
@@ -245,7 +254,7 @@ public:
 
 // define constructor - branch
 class branch_class : public Case_class {
-public:
+protected:
    Symbol name;
    Symbol type_decl;
    Expression expr;
@@ -269,7 +278,7 @@ public:
 
 // define constructor - assign
 class assign_class : public Expression_class {
-public:
+protected:
    Symbol name;
    Expression expr;
 public:
@@ -291,7 +300,7 @@ public:
 
 // define constructor - static_dispatch
 class static_dispatch_class : public Expression_class {
-public:
+protected:
    Expression expr;
    Symbol type_name;
    Symbol name;
@@ -317,7 +326,7 @@ public:
 
 // define constructor - dispatch
 class dispatch_class : public Expression_class {
-public:
+protected:
    Expression expr;
    Symbol name;
    Expressions actual;
@@ -341,7 +350,7 @@ public:
 
 // define constructor - cond
 class cond_class : public Expression_class {
-public:
+protected:
    Expression pred;
    Expression then_exp;
    Expression else_exp;
@@ -365,7 +374,7 @@ public:
 
 // define constructor - loop
 class loop_class : public Expression_class {
-public:
+protected:
    Expression pred;
    Expression body;
 public:
@@ -387,7 +396,7 @@ public:
 
 // define constructor - typcase
 class typcase_class : public Expression_class {
-public:
+protected:
    Expression expr;
    Cases cases;
 public:
@@ -409,7 +418,7 @@ public:
 
 // define constructor - block
 class block_class : public Expression_class {
-public:
+protected:
    Expressions body;
 public:
    block_class(Expressions a1) {
@@ -429,7 +438,7 @@ public:
 
 // define constructor - let
 class let_class : public Expression_class {
-public:
+protected:
    Symbol identifier;
    Symbol type_decl;
    Expression init;
@@ -455,7 +464,7 @@ public:
 
 // define constructor - plus
 class plus_class : public Expression_class {
-public:
+protected:
    Expression e1;
    Expression e2;
 public:
@@ -477,7 +486,7 @@ public:
 
 // define constructor - sub
 class sub_class : public Expression_class {
-public:
+protected:
    Expression e1;
    Expression e2;
 public:
@@ -499,7 +508,7 @@ public:
 
 // define constructor - mul
 class mul_class : public Expression_class {
-public:
+protected:
    Expression e1;
    Expression e2;
 public:
@@ -521,7 +530,7 @@ public:
 
 // define constructor - divide
 class divide_class : public Expression_class {
-public:
+protected:
    Expression e1;
    Expression e2;
 public:
@@ -543,7 +552,7 @@ public:
 
 // define constructor - neg
 class neg_class : public Expression_class {
-public:
+protected:
    Expression e1;
 public:
    neg_class(Expression a1) {
@@ -563,7 +572,7 @@ public:
 
 // define constructor - lt
 class lt_class : public Expression_class {
-public:
+protected:
    Expression e1;
    Expression e2;
 public:
@@ -585,7 +594,7 @@ public:
 
 // define constructor - eq
 class eq_class : public Expression_class {
-public:
+protected:
    Expression e1;
    Expression e2;
 public:
@@ -607,7 +616,7 @@ public:
 
 // define constructor - leq
 class leq_class : public Expression_class {
-public:
+protected:
    Expression e1;
    Expression e2;
 public:
@@ -629,7 +638,7 @@ public:
 
 // define constructor - comp
 class comp_class : public Expression_class {
-public:
+protected:
    Expression e1;
 public:
    comp_class(Expression a1) {
@@ -649,7 +658,7 @@ public:
 
 // define constructor - int_const
 class int_const_class : public Expression_class {
-public:
+protected:
    Symbol token;
 public:
    int_const_class(Symbol a1) {
@@ -669,7 +678,7 @@ public:
 
 // define constructor - bool_const
 class bool_const_class : public Expression_class {
-public:
+protected:
    Boolean val;
 public:
    bool_const_class(Boolean a1) {
@@ -689,7 +698,7 @@ public:
 
 // define constructor - string_const
 class string_const_class : public Expression_class {
-public:
+protected:
    Symbol token;
 public:
    string_const_class(Symbol a1) {
@@ -709,7 +718,7 @@ public:
 
 // define constructor - new_
 class new__class : public Expression_class {
-public:
+protected:
    Symbol type_name;
 public:
    new__class(Symbol a1) {
@@ -729,7 +738,7 @@ public:
 
 // define constructor - isvoid
 class isvoid_class : public Expression_class {
-public:
+protected:
    Expression e1;
 public:
    isvoid_class(Expression a1) {
@@ -749,7 +758,7 @@ public:
 
 // define constructor - no_expr
 class no_expr_class : public Expression_class {
-public:
+protected:
 public:
    no_expr_class() {
    }
@@ -767,7 +776,7 @@ public:
 
 // define constructor - object
 class object_class : public Expression_class {
-public:
+protected:
    Symbol name;
 public:
    object_class(Symbol a1) {
