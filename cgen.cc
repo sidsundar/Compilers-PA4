@@ -405,8 +405,7 @@ void StringEntry::code_def(ostream& s, int stringclasstag)
       << WORD << (DEFAULT_OBJFIELDS + STRING_SLOTS + (len+4)/4) << endl // size
       << WORD;
 
-//TODO
- /***** Add dispatch information for class String ******/
+      emit_disptable_ref(Str, s);
 
       s << endl;                                              // dispatch table
       s << WORD;  lensym->code_ref(s);  s << endl;            // string length
@@ -452,8 +451,8 @@ void IntEntry::code_def(ostream &s, int intclasstag)
       << WORD << intclasstag << endl                      // class tag
       << WORD << (DEFAULT_OBJFIELDS + INT_SLOTS) << endl  // object size
       << WORD; 
-//TODO
- /***** Add dispatch information for class Int ******/
+
+      emit_disptable_ref(Int, s);
 
       s << endl;                                          // dispatch table
       s << WORD << str << endl;                           // integer value
@@ -500,8 +499,8 @@ void BoolConst::code_def(ostream& s, int boolclasstag)
       << WORD << (DEFAULT_OBJFIELDS + BOOL_SLOTS) << endl   // object size
       << WORD;
 
- /***** Add dispatch information for class Bool ******/
-//TODO
+      emit_disptable_ref(Bool, s);
+
       s << endl;                                            // dispatch table
       s << WORD << val << endl;                             // value (0 or 1)
 }
@@ -554,7 +553,7 @@ void CgenClassTable::code_global_data()
 
 void CgenClassTable::code_proto_objects() 
 {
-  str << ALIGN << endl;
+  str << endl << ALIGN;
   for(List<CgenNode> *l = nds; l; l = l->tl())
     l->hd()->code_proto_object(str);
 }
@@ -579,6 +578,18 @@ void CgenClassTable::code_classnames()
     str << WORD 
       << STRCONST_PREFIX << stringtable.lookup_string(clsname->get_string())->get_index()
       << endl;
+  }
+
+
+}
+
+void CgenClassTable::code_dispatch_tables()
+{
+  str << endl << ALIGN;
+  for(List<CgenNode> *l = nds; l; l = l->tl())  {
+    emit_disptable_ref(l->hd()->get_name(), str);
+    str << LABEL;
+    l->hd()->dt.code(str);
   }
 
 
@@ -868,11 +879,10 @@ void CgenClassTable::code()
   if (cgen_debug) cout << "coding constants" << endl;
   code_constants();
 
-//                 Add your code to emit
   code_proto_objects();
   code_classnames();
-//                   - dispatch tables
-//
+  root()->build_dispatch_table();
+  code_dispatch_tables();
 
   if (cgen_debug) cout << "coding global text" << endl;
   code_global_text();
@@ -932,7 +942,9 @@ void CgenNode::code_proto_object(ostream& str)
   str << WORD << code_proto_attrs(str, false) << endl;
 
   //Dispatch Pointer
-  str << WORD << -1 << endl;
+  str << WORD;
+  emit_disptable_ref(get_name(), str);
+  str << endl;
 
   code_proto_attrs(str);
 
@@ -965,7 +977,7 @@ int CgenNode::code_proto_attrs(ostream& str, bool print)
 
   return sz;
 }
-void CgenNode::code_methods()
+void CgenNode::code_methods(ostream& str)
 {
   //Callee
   //Save S0
@@ -974,6 +986,56 @@ void CgenNode::code_methods()
   //Restore S0
 
 }
+
+void CgenNode::build_dispatch_table() 
+{
+  for(int i = features->first(); features->more(i); i = features->next(i))  {
+    auto feature = features->nth(i);
+    if(!feature->is_attr())  {
+      dt.add_method(feature->get_name(), get_name());
+    }
+  }
+  for (List<CgenNode> *l = children; l; l = l->tl())  {
+    l->hd()->dt = DispatchTable(dt);
+    l->hd()->build_dispatch_table();
+  }
+}
+
+int DispatchTable::get_index(Symbol method_name) {
+  int i = 0;
+  for(auto p: table)  {
+    if(p.first == method_name)
+      return i;
+    i++;
+  }
+  return -1;
+}
+
+Symbol DispatchTable::get_dispatch(Symbol method_name)  {
+  for(auto p : table)
+    if(p.first == method_name)
+      return p.second;
+}
+
+void DispatchTable::add_method(Symbol method_name, Symbol class_name) {
+  for(auto &p : table)
+    if(p.first == method_name)  {
+      p.second = class_name;
+      return;
+    }
+  table.push_back(std::make_pair(method_name, class_name));
+}
+
+void DispatchTable::code(ostream &str)  {
+  int i = 0;
+  for(auto p : table) {
+    str << WORD;
+    emit_method_ref(p.second, p.first, str);
+    str << endl;
+    i++;
+  }
+}
+
 
 //******************************************************************
 //
