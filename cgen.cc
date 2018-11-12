@@ -250,7 +250,10 @@ static void emit_protobj_ref(Symbol sym, ostream& s)
 { s << sym << PROTOBJ_SUFFIX; }
 
 static void emit_method_ref(Symbol classname, Symbol methodname, ostream& s)
-{ s << classname << METHOD_SEP << methodname; }
+{ s << classname << METHOD_SEP << methodname;
+  if(classname == Object || classname == IO || classname == Str)
+    s << PRECALL_SUFFIX; 
+}
 
 static void emit_label_def(int l, ostream &s)
 {
@@ -321,6 +324,17 @@ static void emit_push(char *reg, ostream& str)
 {
   emit_store(reg,0,SP,str);
   emit_addiu(SP,SP,-4,str);
+}
+
+static void emit_pop(char *reg, ostream &str)
+{
+  emit_addiu(SP,SP,4,str);
+  emit_load(reg,0,SP,str);
+
+}
+
+static void emit_pop_n(int n, ostream &str)  {
+  emit_addiu(SP,SP,4*n,str);
 }
 
 //
@@ -589,7 +603,7 @@ void CgenClassTable::code_dispatch_tables()
   for(List<CgenNode> *l = nds; l; l = l->tl())  {
     emit_disptable_ref(l->hd()->get_name(), str);
     str << LABEL;
-    l->hd()->dt.code(str);
+    l->hd()->dispatch_table.code(str);
   }
 
 
@@ -669,6 +683,16 @@ void CgenClassTable::code_constants()
   code_bools(boolclasstag);
 }
 
+void CgenClassTable::code_runtime_call()
+{
+
+}
+void CgenClassTable::code_text()
+{
+  for(List<CgenNode> *l = nds; l; l = l->tl())
+    l->hd()->code_methods(this);
+
+}
 void CgenClassTable::install_basic_classes()
 {
 
@@ -887,10 +911,8 @@ void CgenClassTable::code()
   if (cgen_debug) cout << "coding global text" << endl;
   code_global_text();
 
-//                 Add your code to emit
-//                   - object initializer
-//                   - the class methods
-//                   - etc...
+  code_runtime_call();
+  code_text();
 
 }
 
@@ -959,7 +981,6 @@ int CgenNode::code_proto_attrs(ostream& str, bool print)
     auto feature = features->nth(i);
     if(feature->is_attr())  {
       sz++;
-
       if(print){
         Symbol type = feature->get_type();
 
@@ -977,13 +998,35 @@ int CgenNode::code_proto_attrs(ostream& str, bool print)
 
   return sz;
 }
-void CgenNode::code_methods(ostream& str)
+void CgenNode::code_methods(CgenClassTableP table)
 {
-  //Callee
-  //Save S0
-  //
-  //gen_code(expr)
-  //Restore S0
+  ostream& str = table->stream();
+  //init
+  emit_init_ref(get_name(), str);
+  str << LABEL;
+  for(int i = features->first(); features->more(i); i = features->next(i))  {
+    auto feature = features->nth(i);
+    if(feature->is_attr())  {
+      //TODO
+    }
+  }
+
+  str << RET << endl;
+
+  //Runtime methods
+  if(get_name() == Object || get_name() == IO || get_name() == Str)
+    return;
+
+  //Methods
+  for(int i = features->first(); features->more(i); i = features->next(i))  {
+    auto feature = features->nth(i);
+    if(!feature->is_attr())  {
+      emit_method_ref(get_name(), feature->get_name(), str);
+      str << LABEL;
+      feature->code(table);
+    }
+  }
+
 
 }
 
@@ -992,41 +1035,42 @@ void CgenNode::build_dispatch_table()
   for(int i = features->first(); features->more(i); i = features->next(i))  {
     auto feature = features->nth(i);
     if(!feature->is_attr())  {
-      dt.add_method(feature->get_name(), get_name());
+      dispatch_table.add_identifier(feature->get_name(), get_name());
     }
   }
   for (List<CgenNode> *l = children; l; l = l->tl())  {
-    l->hd()->dt = DispatchTable(dt);
+    l->hd()->dispatch_table = Environment(dispatch_table);
     l->hd()->build_dispatch_table();
   }
 }
 
-int DispatchTable::get_index(Symbol method_name) {
+int Environment::get_index(Symbol identifier) {
   int i = 0;
   for(auto p: table)  {
-    if(p.first == method_name)
+    if(p.first == identifier)
       return i;
     i++;
   }
   return -1;
 }
 
-Symbol DispatchTable::get_dispatch(Symbol method_name)  {
+Symbol Environment::get_class(Symbol identifier)  {
   for(auto p : table)
-    if(p.first == method_name)
+    if(p.first == identifier)
       return p.second;
+  return No_class;
 }
 
-void DispatchTable::add_method(Symbol method_name, Symbol class_name) {
+void Environment::add_identifier(Symbol identifier, Symbol class_name) {
   for(auto &p : table)
-    if(p.first == method_name)  {
+    if(p.first == identifier)  {
       p.second = class_name;
       return;
     }
-  table.push_back(std::make_pair(method_name, class_name));
+  table.push_back(std::make_pair(identifier, class_name));
 }
 
-void DispatchTable::code(ostream &str)  {
+void Environment::code(ostream &str)  {
   int i = 0;
   for(auto p : table) {
     str << WORD;
@@ -1047,92 +1091,152 @@ void DispatchTable::code(ostream &str)  {
 //
 //*****************************************************************
 
-void assign_class::code(ostream &s) {
+void assign_class::code(CgenClassTableP table) {
 }
 
-void static_dispatch_class::code(ostream &s) {
+void static_dispatch_class::code(CgenClassTableP table) {
 }
 
-void dispatch_class::code(ostream &s) {
-  //TODO
-  //ret address in $ra
-  //Caller
+void dispatch_class::code(CgenClassTableP table) {
+  ostream &str = table->stream();
+
+  expr->code(table);
+// Push SELF on stack
+  emit_push(SELF, str);
+// Set SELF to expr
+  emit_move(SELF, ACC, str);
+// Push arg1 to argn
+  int num_args = 0;
+  for(int i = actual->first(); actual->more(i); i = actual->next(i))  {
+    Expression e = actual->nth(i);
+    e->code(table);
+    emit_push(ACC, str);
+    num_args++;
+  }
+// Jump to dispatch[SELF][index]
+
+  CgenNodeP cl = table->probe(expr->get_type());
+  int method_index = cl->dispatch_table.get_index(name);
+
+  emit_load(T1, DISPTABLE_OFFSET, SELF, str);
+  emit_load(T1, method_index, T1, str);
+  emit_jalr(T1, str);
+
+// Pop arg1 to argn
+  emit_pop_n(num_args, str);
+// Pop SELF
+  emit_pop(SELF, str);
 }
 
-void cond_class::code(ostream &s) {
+void cond_class::code(CgenClassTableP table) {
 }
 
-void loop_class::code(ostream &s) {
+void loop_class::code(CgenClassTableP table) {
 }
 
-void typcase_class::code(ostream &s) {
+void typcase_class::code(CgenClassTableP table) {
 }
 
-void block_class::code(ostream &s) {
+void block_class::code(CgenClassTableP table) {
 }
 
-void let_class::code(ostream &s) {
+void let_class::code(CgenClassTableP table) {
 }
 
-void plus_class::code(ostream &s) {
+void plus_class::code(CgenClassTableP table) {
 }
 
-void sub_class::code(ostream &s) {
+void sub_class::code(CgenClassTableP table) {
 }
 
-void mul_class::code(ostream &s) {
+void mul_class::code(CgenClassTableP table) {
 }
 
-void divide_class::code(ostream &s) {
+void divide_class::code(CgenClassTableP table) {
 }
 
-void neg_class::code(ostream &s) {
+void neg_class::code(CgenClassTableP table) {
 }
 
-void lt_class::code(ostream &s) {
+void lt_class::code(CgenClassTableP table) {
 }
 
-void eq_class::code(ostream &s) {
+void eq_class::code(CgenClassTableP table) {
 }
 
-void leq_class::code(ostream &s) {
+void leq_class::code(CgenClassTableP table) {
 }
 
-void comp_class::code(ostream &s) {
+void comp_class::code(CgenClassTableP table) {
 }
 
-void int_const_class::code(ostream& s)  
+void int_const_class::code(CgenClassTableP table)  
 {
   //
   // Need to be sure we have an IntEntry *, not an arbitrary Symbol
   //
-  emit_load_int(ACC,inttable.lookup_string(token->get_string()),s);
+  emit_load_int(ACC,inttable.lookup_string(token->get_string()), table->stream());
 }
 
-void string_const_class::code(ostream& s)
+void string_const_class::code(CgenClassTableP table)
 {
-  emit_load_string(ACC,stringtable.lookup_string(token->get_string()),s);
+  emit_load_string(ACC,stringtable.lookup_string(token->get_string()), table->stream());
 }
 
-void bool_const_class::code(ostream& s)
+void bool_const_class::code(CgenClassTableP table)
 {
-  emit_load_bool(ACC, BoolConst(val), s);
+  emit_load_bool(ACC, BoolConst(val), table->stream());
 }
 
-void new__class::code(ostream &s) {
-  //TODO
-  //$a0 = proto
+void new__class::code(CgenClassTableP table) {
+  ostream &str = table->stream();
+  //$a1 = proto
+  emit_partial_load_address(A1, str);
+  emit_protobj_ref(type_name, str);
+  str << endl;
+
   //jump to Object.copy
+  emit_jal("Object.copy", str);
+  //Move new object to ACC
+  emit_move(ACC, A1, str);
+
   //Run class.init
+  str << JAL;
+  emit_init_ref(type_name, str);
+  str << endl;
+
 }
 
-void isvoid_class::code(ostream &s) {
+void isvoid_class::code(CgenClassTableP table) {
 }
 
-void no_expr_class::code(ostream &s) {
+void no_expr_class::code(CgenClassTableP table) {
+  //Do nothing
 }
 
-void object_class::code(ostream &s) {
+void object_class::code(CgenClassTableP table) {
 }
 
 
+
+
+void attr_class::code(CgenClassTableP table) {
+
+}
+
+void method_class::code(CgenClassTableP table) {
+  ostream& str = table->stream();
+// Push fp_old on stack
+  emit_push(FP, str);
+// Set fp to point to stack top
+  emit_move(FP, SP, str);
+// Evaluate expression - this will set ACC to return value
+  expr->code(table);
+// Set sp = fp
+  emit_move(SP, FP, str);
+// Pop fp_old
+  emit_pop(FP, str);
+// Jump to RA
+  emit_return(str);
+
+}

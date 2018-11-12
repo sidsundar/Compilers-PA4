@@ -37,6 +37,8 @@ private:
    void code_proto_objects();
    void code_classnames();
    void code_dispatch_tables();
+   void code_runtime_call();
+   void code_text();
 
 // The following creates an inheritance graph from
 // a list of classes.  The graph is implemented as
@@ -52,15 +54,16 @@ public:
    CgenClassTable(Classes, ostream& str);
    void code();
    CgenNodeP root();
+   ostream& stream() { return str; }
 };
 
-class DispatchTable
+class Environment
 {
     std::list< std::pair<Symbol, Symbol> > table;
   public:
-    int get_index(Symbol method_name);
-    Symbol get_dispatch(Symbol method_name);
-    void add_method(Symbol method_name, Symbol class_name);
+    int get_index(Symbol identifier);
+    Symbol get_class(Symbol identifier);
+    void add_identifier(Symbol identifier, Symbol class_name);
     void code(ostream &str);
 };
 
@@ -74,7 +77,8 @@ private:
    
 
 public:
-   DispatchTable dt;
+   Environment dispatch_table;
+   Environment attr_table;
    CgenNode(Class_ c,
             Basicness bstatus,
             CgenClassTableP class_table,
@@ -89,7 +93,7 @@ public:
    int get_tag() { return class_tag; }
    void code_proto_object(ostream& str);
    int code_proto_attrs(ostream& str, bool print=true);
-   void code_methods(ostream& str);
+   void code_methods(CgenClassTableP);
    void build_dispatch_table();
 };
 

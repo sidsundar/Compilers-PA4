@@ -193,6 +193,7 @@ public:
    Symbol get_name() {return name;}
    Symbol get_type() {return return_type;}
    bool is_attr() {return false;}
+   
 
 #ifdef Feature_SHARED_EXTRAS
    Feature_SHARED_EXTRAS

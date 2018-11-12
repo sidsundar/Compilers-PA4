@@ -31,6 +31,7 @@
 #define METHOD_SEP           "."
 #define CLASSINIT_SUFFIX     "_init"
 #define PROTOBJ_SUFFIX       "_protObj"
+#define PRECALL_SUFFIX       "_pre"
 #define OBJECTPROTOBJ        "Object" PROTOBJ_SUFFIX
 #define INTCONST_PREFIX      "int_const"
 #define STRCONST_PREFIX      "str_const"
@@ -67,7 +68,7 @@
 #define ZERO "$zero"		// Zero register 
 #define ACC  "$a0"		// Accumulator 
 #define A1   "$a1"		// For arguments to prim funcs 
-#define SELF "$s0"		// Ptr to self (callee saves) 
+#define SELF "$s0"		// Ptr to self (caller saves) 
 #define T1   "$t1"		// Temporary 1 
 #define T2   "$t2"		// Temporary 2 
 #define T3   "$t3"		// Temporary 3 
