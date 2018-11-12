@@ -250,10 +250,7 @@ static void emit_protobj_ref(Symbol sym, ostream& s)
 { s << sym << PROTOBJ_SUFFIX; }
 
 static void emit_method_ref(Symbol classname, Symbol methodname, ostream& s)
-{ s << classname << METHOD_SEP << methodname;
-  if(classname == Object || classname == IO || classname == Str)
-    s << PRECALL_SUFFIX; 
-}
+{ s << classname << METHOD_SEP << methodname; }
 
 static void emit_label_def(int l, ostream &s)
 {
@@ -334,6 +331,8 @@ static void emit_pop(char *reg, ostream &str)
 }
 
 static void emit_pop_n(int n, ostream &str)  {
+  if(n == 0)
+    return;
   emit_addiu(SP,SP,4*n,str);
 }
 
@@ -683,10 +682,6 @@ void CgenClassTable::code_constants()
   code_bools(boolclasstag);
 }
 
-void CgenClassTable::code_runtime_call()
-{
-
-}
 void CgenClassTable::code_text()
 {
   for(List<CgenNode> *l = nds; l; l = l->tl())
@@ -903,15 +898,14 @@ void CgenClassTable::code()
   if (cgen_debug) cout << "coding constants" << endl;
   code_constants();
 
+  root()->build_envs();
+
   code_proto_objects();
   code_classnames();
-  root()->build_dispatch_table();
   code_dispatch_tables();
 
   if (cgen_debug) cout << "coding global text" << endl;
   code_global_text();
-
-  code_runtime_call();
   code_text();
 
 }
@@ -961,43 +955,25 @@ void CgenNode::code_proto_object(ostream& str)
   str << WORD << class_tag << endl;
 
   //Object Size
-  str << WORD << code_proto_attrs(str, false) << endl;
+  str << WORD << DEFAULT_OBJFIELDS + attr_table.len() << endl;
 
   //Dispatch Pointer
   str << WORD;
   emit_disptable_ref(get_name(), str);
   str << endl;
 
-  code_proto_attrs(str);
+  for(int i = 0; i < attr_table.len(); i++) {
+    auto p = attr_table.at(i);
 
-}
-int CgenNode::code_proto_attrs(ostream& str, bool print)
-{
-  if (get_name() == Object)
-    return 0;
-
-  int sz = parentnd->code_proto_attrs(str, print); 
-  for(int i = features->first(); features->more(i); i = features->next(i))  {
-    auto feature = features->nth(i);
-    if(feature->is_attr())  {
-      sz++;
-      if(print){
-        Symbol type = feature->get_type();
-
-        str << WORD;
-        if(type == Str || type == Int || type == Bool)  {
-          emit_protobj_ref(type, str); 
-        }
-        else {
-          str << 0;
-        }
-        str << endl;
-      }
-    }
+    str << WORD;
+    if(p.second == Str || p.second == Int || p.second == Bool)
+      emit_protobj_ref(p.second, str);
+    else
+      str << 0;
+    str<<endl;
   }
-
-  return sz;
 }
+
 void CgenNode::code_methods(CgenClassTableP table)
 {
   ostream& str = table->stream();
@@ -1030,17 +1006,21 @@ void CgenNode::code_methods(CgenClassTableP table)
 
 }
 
-void CgenNode::build_dispatch_table() 
+void CgenNode::build_envs() 
 {
   for(int i = features->first(); features->more(i); i = features->next(i))  {
     auto feature = features->nth(i);
     if(!feature->is_attr())  {
       dispatch_table.add_identifier(feature->get_name(), get_name());
     }
+    else {
+      attr_table.add_identifier(feature->get_name(), feature->get_type());
+    }
   }
   for (List<CgenNode> *l = children; l; l = l->tl())  {
     l->hd()->dispatch_table = Environment(dispatch_table);
-    l->hd()->build_dispatch_table();
+    l->hd()->attr_table = Environment(attr_table);
+    l->hd()->build_envs();
   }
 }
 
@@ -1080,6 +1060,15 @@ void Environment::code(ostream &str)  {
   }
 }
 
+std::pair<Symbol, Symbol> Environment::at(int index) {
+  int i = 0;
+  for(auto p : table) {
+    if(i == index)
+      return p;
+    i++;
+  }
+}
+
 
 //******************************************************************
 //
@@ -1099,33 +1088,21 @@ void static_dispatch_class::code(CgenClassTableP table) {
 
 void dispatch_class::code(CgenClassTableP table) {
   ostream &str = table->stream();
-
-  expr->code(table);
-// Push SELF on stack
-  emit_push(SELF, str);
-// Set SELF to expr
-  emit_move(SELF, ACC, str);
 // Push arg1 to argn
-  int num_args = 0;
   for(int i = actual->first(); actual->more(i); i = actual->next(i))  {
     Expression e = actual->nth(i);
     e->code(table);
     emit_push(ACC, str);
-    num_args++;
   }
-// Jump to dispatch[SELF][index]
 
+  expr->code(table);
+// Jump to dispatch[SELF][index]
   CgenNodeP cl = table->probe(expr->get_type());
   int method_index = cl->dispatch_table.get_index(name);
 
-  emit_load(T1, DISPTABLE_OFFSET, SELF, str);
+  emit_load(T1, DISPTABLE_OFFSET, ACC, str);
   emit_load(T1, method_index, T1, str);
   emit_jalr(T1, str);
-
-// Pop arg1 to argn
-  emit_pop_n(num_args, str);
-// Pop SELF
-  emit_pop(SELF, str);
 }
 
 void cond_class::code(CgenClassTableP table) {
@@ -1190,15 +1167,14 @@ void bool_const_class::code(CgenClassTableP table)
 
 void new__class::code(CgenClassTableP table) {
   ostream &str = table->stream();
-  //$a1 = proto
-  emit_partial_load_address(A1, str);
+  //$a0 = proto
+  emit_partial_load_address(ACC, str);
   emit_protobj_ref(type_name, str);
   str << endl;
 
-  //jump to Object.copy
+  //jump to Object.copy - Save/Restore RA?
   emit_jal("Object.copy", str);
-  //Move new object to ACC
-  emit_move(ACC, A1, str);
+  //Object copy in ACC
 
   //Run class.init
   str << JAL;
@@ -1215,6 +1191,9 @@ void no_expr_class::code(CgenClassTableP table) {
 }
 
 void object_class::code(CgenClassTableP table) {
+  ostream &str = table->stream();
+  if(name == self)
+    emit_move(ACC, SELF, str);
 }
 
 
@@ -1226,17 +1205,26 @@ void attr_class::code(CgenClassTableP table) {
 
 void method_class::code(CgenClassTableP table) {
   ostream& str = table->stream();
-// Push fp_old on stack
+// Push RA on stack
+  emit_push(RA, str);
+// Push SELF on stack
+  emit_push(SELF, str);
+  emit_move(SELF, ACC, str);
+// Push FP on stack
   emit_push(FP, str);
 // Set fp to point to stack top
   emit_move(FP, SP, str);
 // Evaluate expression - this will set ACC to return value
   expr->code(table);
-// Set sp = fp
-  emit_move(SP, FP, str);
-// Pop fp_old
+// Restore FP
   emit_pop(FP, str);
+// Restore SELF
+  emit_pop(SELF, str);
 // Jump to RA
+  emit_pop(RA, str);
+  // Pop arg1 to argn
+  emit_pop_n(formals->len(), str);
   emit_return(str);
+
 
 }

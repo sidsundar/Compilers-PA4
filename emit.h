@@ -31,7 +31,6 @@
 #define METHOD_SEP           "."
 #define CLASSINIT_SUFFIX     "_init"
 #define PROTOBJ_SUFFIX       "_protObj"
-#define PRECALL_SUFFIX       "_pre"
 #define OBJECTPROTOBJ        "Object" PROTOBJ_SUFFIX
 #define INTCONST_PREFIX      "int_const"
 #define STRCONST_PREFIX      "str_const"

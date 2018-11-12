@@ -8,7 +8,7 @@ class Main inherits Alpha{
   b : String;
   c : Bool;
   d : Hullaboola;
-  main():IO { (new IO).out_string("Hello world!\n")};
+  main():Object { (new IO).out_string("Hello world!\n")};
 };
 
 class Hullaboola	{

@@ -37,7 +37,6 @@ private:
    void code_proto_objects();
    void code_classnames();
    void code_dispatch_tables();
-   void code_runtime_call();
    void code_text();
 
 // The following creates an inheritance graph from
@@ -64,7 +63,9 @@ class Environment
     int get_index(Symbol identifier);
     Symbol get_class(Symbol identifier);
     void add_identifier(Symbol identifier, Symbol class_name);
+    std::pair<Symbol, Symbol> at(int);
     void code(ostream &str);
+    int len() { return table.size(); }
 };
 
 class CgenNode : public class__class {
@@ -92,9 +93,8 @@ public:
    Symbol get_name()  { return name; }
    int get_tag() { return class_tag; }
    void code_proto_object(ostream& str);
-   int code_proto_attrs(ostream& str, bool print=true);
    void code_methods(CgenClassTableP);
-   void build_dispatch_table();
+   void build_envs();
 };
 
 class BoolConst 
