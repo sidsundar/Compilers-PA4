@@ -50,6 +50,10 @@ private:
    void build_inheritance_tree();
    void set_relations(CgenNodeP nd);
 public:
+   CgenNodeP current_class;
+   SymbolTable<Symbol,int> local_vars; 
+   //Store location as offset from fp in #words(-ve for let decl and +ve for actual params)
+
    CgenClassTable(Classes, ostream& str);
    void code();
    CgenNodeP root();

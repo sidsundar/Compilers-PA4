@@ -61,6 +61,8 @@
 #define ALIGN         "\t.align\t2\n"
 #define WORD          "\t.word\t"
 
+#define ARG_OFFSET 4
+
 //
 // register names
 //

@@ -684,8 +684,10 @@ void CgenClassTable::code_constants()
 
 void CgenClassTable::code_text()
 {
-  for(List<CgenNode> *l = nds; l; l = l->tl())
+  for(List<CgenNode> *l = nds; l; l = l->tl())  {
+
     l->hd()->code_methods(this);
+  }
 
 }
 void CgenClassTable::install_basic_classes()
@@ -976,6 +978,7 @@ void CgenNode::code_proto_object(ostream& str)
 
 void CgenNode::code_methods(CgenClassTableP table)
 {
+  table->current_class = this;
   ostream& str = table->stream();
   //init
   emit_init_ref(get_name(), str);
@@ -983,7 +986,7 @@ void CgenNode::code_methods(CgenClassTableP table)
   for(int i = features->first(); features->more(i); i = features->next(i))  {
     auto feature = features->nth(i);
     if(feature->is_attr())  {
-      //TODO
+      feature->code(table);
     }
   }
 
@@ -1067,6 +1070,7 @@ std::pair<Symbol, Symbol> Environment::at(int index) {
       return p;
     i++;
   }
+  return std::make_pair(No_class, No_class);
 }
 
 
@@ -1098,8 +1102,9 @@ void dispatch_class::code(CgenClassTableP table) {
   expr->code(table);
 // Jump to dispatch[SELF][index]
   CgenNodeP cl = table->probe(expr->get_type());
+  if(cl->get_name() == SELF_TYPE)
+    cl = table->current_class;
   int method_index = cl->dispatch_table.get_index(name);
-
   emit_load(T1, DISPTABLE_OFFSET, ACC, str);
   emit_load(T1, method_index, T1, str);
   emit_jalr(T1, str);
@@ -1115,6 +1120,8 @@ void typcase_class::code(CgenClassTableP table) {
 }
 
 void block_class::code(CgenClassTableP table) {
+  for(int i = body->first(); body->more(i); i = body->next(i))
+        body->nth(i)->code(table);
 }
 
 void let_class::code(CgenClassTableP table) {
@@ -1172,7 +1179,7 @@ void new__class::code(CgenClassTableP table) {
   emit_protobj_ref(type_name, str);
   str << endl;
 
-  //jump to Object.copy - Save/Restore RA?
+  //jump to Object.copy
   emit_jal("Object.copy", str);
   //Object copy in ACC
 
@@ -1192,18 +1199,33 @@ void no_expr_class::code(CgenClassTableP table) {
 
 void object_class::code(CgenClassTableP table) {
   ostream &str = table->stream();
+
+  int attr_ind = table->current_class->attr_table.get_index(name);
+  int* fp_offset = table->local_vars.lookup(name);
   if(name == self)
     emit_move(ACC, SELF, str);
+  //name is a local variable
+  else if(fp_offset != NULL)
+    emit_load(ACC, *fp_offset, FP, str);
+  //name is an attribute
+  else if(attr_ind != -1)
+    emit_load(ACC, DEFAULT_OBJFIELDS + attr_ind, SELF, str);
 }
 
 
 
 
 void attr_class::code(CgenClassTableP table) {
-
+//Set up initialization
 }
 
 void method_class::code(CgenClassTableP table) {
+// Set up locations for parameters
+  table->local_vars.enterscope();
+  int n = formals->len();
+  for(int i = formals->first(), j = 1; formals->more(i); i = formals->next(i), j++) 
+    table->local_vars.addid(formals->nth(i)->get_name(), new int(ARG_OFFSET+n-j));
+
   ostream& str = table->stream();
 // Push RA on stack
   emit_push(RA, str);
@@ -1226,5 +1248,6 @@ void method_class::code(CgenClassTableP table) {
   emit_pop_n(formals->len(), str);
   emit_return(str);
 
+  table->local_vars.exitscope();
 
 }
