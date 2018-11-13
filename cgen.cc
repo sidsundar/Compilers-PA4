@@ -1085,6 +1085,7 @@ std::pair<Symbol, Symbol> Environment::at(int index) {
 //*****************************************************************
 
 void assign_class::code(CgenClassTableP table) {
+  //TODO: local_vars.lookup(lhs) will now store the result of expr
 }
 
 void static_dispatch_class::code(CgenClassTableP table) {
@@ -1125,6 +1126,7 @@ void block_class::code(CgenClassTableP table) {
 }
 
 void let_class::code(CgenClassTableP table) {
+  //TODO: Push on stack and store offset from FP in local_vars
 }
 
 void plus_class::code(CgenClassTableP table) {

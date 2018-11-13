@@ -1,3 +1,30 @@
+Evaluate expression - result of expression is in ACC, stack is unmodified. (1-reg STACK machine)
+
+Activation Record (stack grows downward)
+arg1
+arg2
+...
+argn
+RA
+SELF
+FP
+     <--- SP, new value of FP
+
+Caller
+Evaluate args and push to stack.
+Set object on which method will be called in ACC
+Calculate address of method using dispatch table.
+Jump to method
+
+Callee
+Save RA, SELF, FP
+Set FP to stack top
+Set SELF to ACC
+Evaluate expression
+Restore RA, SELF, FP
+Pop arguments
+Return
+
 README file for Programming Assignment 5  (C++ edition)
 =======================================================
 
