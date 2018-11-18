@@ -24,6 +24,7 @@
 
 #include "cgen.h"
 #include "cgen_gc.h"
+#include <typeinfo>
 
 extern void emit_string_constant(ostream& str, char *s);
 extern int cgen_debug;
@@ -265,6 +266,11 @@ static void emit_beqz(char *source, int label, ostream &s)
   s << endl;
 }
 
+static void emit_beqz(char *source, char *label, ostream &s)
+{
+  s << BEQZ << source << " " << label << endl;
+}
+
 static void emit_beq(char *src1, char *src2, int label, ostream &s)
 {
   s << BEQ << src1 << " " << src2 << " ";
@@ -317,16 +323,38 @@ static void emit_branch(int l, ostream& s)
 //
 // Push a register on the stack. The stack grows towards smaller addresses.
 //
+
+static int sp_from_fp;
+
 static void emit_push(char *reg, ostream& str)
 {
   emit_store(reg,0,SP,str);
   emit_addiu(SP,SP,-4,str);
+  sp_from_fp--;
+
 }
 
 static void emit_pop(char *reg, ostream &str)
 {
   emit_addiu(SP,SP,4,str);
   emit_load(reg,0,SP,str);
+  sp_from_fp++;
+
+}
+
+static void emit_push_FP(ostream &str)
+{
+  emit_store(FP,0,SP,str);
+  emit_addiu(SP,SP,-4,str);
+  sp_from_fp = 1;
+
+}
+
+static void emit_pop_FP(ostream &str)
+{
+  emit_addiu(SP,SP,4,str);
+  emit_load(FP,0,SP,str);
+  assert(sp_from_fp == 1);
 
 }
 
@@ -334,6 +362,11 @@ static void emit_pop_n(int n, ostream &str)  {
   if(n == 0)
     return;
   emit_addiu(SP,SP,4*n,str);
+  sp_from_fp += n;
+}
+
+static void emit_seq(char *dest, char *src1, char *src2, ostream &str)  {
+  str << SEQ << dest << ' ' << src1 << ' ' << src2 << endl;
 }
 
 //
@@ -366,6 +399,16 @@ static void emit_gc_check(char *source, ostream &s)
 {
   if (source != (char*)A1) emit_move(A1, source, s);
   s << JAL << "_gc_check" << endl;
+}
+
+static void emit_bool_to_Bool(ostream& str) {
+  emit_push(ACC, str);
+  emit_partial_load_address(ACC, str);
+  emit_protobj_ref(Bool, str);
+  str << endl;
+  emit_jal("Object.copy", str);
+  emit_pop(T1, str);
+  emit_store(T1, DEFAULT_OBJFIELDS, ACC, str);
 }
 
 
@@ -602,6 +645,11 @@ void CgenClassTable::code_dispatch_tables()
   for(List<CgenNode> *l = nds; l; l = l->tl())  {
     emit_disptable_ref(l->hd()->get_name(), str);
     str << LABEL;
+
+    str << WORD;
+    emit_init_ref(l->hd()->get_name(), str);
+    str << endl;
+
     l->hd()->dispatch_table.code(str);
   }
 
@@ -965,14 +1013,7 @@ void CgenNode::code_proto_object(ostream& str)
   str << endl;
 
   for(int i = 0; i < attr_table.len(); i++) {
-    auto p = attr_table.at(i);
-
-    str << WORD;
-    if(p.second == Str || p.second == Int || p.second == Bool)
-      emit_protobj_ref(p.second, str);
-    else
-      str << 0;
-    str<<endl;
+    str << WORD << 0 << endl;
   }
 }
 
@@ -980,17 +1021,8 @@ void CgenNode::code_methods(CgenClassTableP table)
 {
   table->current_class = this;
   ostream& str = table->stream();
-  //init
-  emit_init_ref(get_name(), str);
-  str << LABEL;
-  for(int i = features->first(); features->more(i); i = features->next(i))  {
-    auto feature = features->nth(i);
-    if(feature->is_attr())  {
-      feature->code(table);
-    }
-  }
-
-  str << RET << endl;
+  //init - also follows calling convention
+  code_init_method(table);
 
   //Runtime methods
   if(get_name() == Object || get_name() == IO || get_name() == Str)
@@ -1007,6 +1039,59 @@ void CgenNode::code_methods(CgenClassTableP table)
   }
 
 
+}
+
+void CgenNode::code_init_method(CgenClassTableP table)  {
+  ostream& str = table->stream();
+  emit_init_ref(get_name(), str);
+  str << LABEL;
+  if(attr_table.len() == 0) {
+    emit_return(str);
+    return;
+  }
+
+  //Set default attrs
+  bool t1_is_zero = false;
+  for(int i = 0; i < attr_table.len(); i++) {
+    auto p = attr_table.at(i);
+    
+    if(p.second == Str || p.second == Int || p.second == Bool)  {
+      emit_partial_load_address(T1, str);
+      emit_protobj_ref(p.second, str);
+      str << endl;
+      t1_is_zero = false;
+    }
+    else{
+      if(!t1_is_zero)
+        emit_move(T1, ZERO, str);
+      t1_is_zero = true;
+    }
+    emit_store(T1, DEFAULT_OBJFIELDS + i, ACC, str);
+  }
+  //Follow calling convention so that expressions evaluate correctly
+  emit_push(RA, str);
+  emit_push(SELF, str);
+  emit_move(SELF, ACC, str);
+  emit_push_FP(str);
+  emit_move(FP, SP, str);
+
+  code_init_attrs(table);
+
+  emit_pop_FP(str);
+  emit_pop(SELF, str);
+  emit_pop(RA, str);
+  emit_return(str);
+}
+
+void CgenNode::code_init_attrs(CgenClassTableP table){
+  if(get_name() != Object)
+    parentnd->code_init_attrs(table);
+  for(int i = features->first(); features->more(i); i = features->next(i))  {
+    auto feature = features->nth(i);
+    if(feature->is_attr())  {
+      feature->code(table);
+    }
+  }
 }
 
 void CgenNode::build_envs() 
@@ -1055,6 +1140,7 @@ void Environment::add_identifier(Symbol identifier, Symbol class_name) {
 
 void Environment::code(ostream &str)  {
   int i = 0;
+
   for(auto p : table) {
     str << WORD;
     emit_method_ref(p.second, p.first, str);
@@ -1085,39 +1171,125 @@ std::pair<Symbol, Symbol> Environment::at(int index) {
 //*****************************************************************
 
 void assign_class::code(CgenClassTableP table) {
-  //TODO: local_vars.lookup(lhs) will now store the result of expr
+  ostream &str = table->stream();
+  //local_vars.lookup(name) will store the result of expr
+  expr->code(table);
+
+  int attr_ind = table->current_class->attr_table.get_index(name);
+  int* fp_offset = table->local_vars.lookup(name);
+  //name is a local variable
+  if(fp_offset != NULL)
+    emit_store(ACC, *fp_offset, FP, str);
+  //name is an attribute
+  else if(attr_ind != -1)
+    emit_store(ACC, DEFAULT_OBJFIELDS + attr_ind, SELF, str);
+
 }
 
 void static_dispatch_class::code(CgenClassTableP table) {
+  ostream &str = table->stream();
+// Push arg1 to argn
+  int n_args = 0;
+  for(int i = actual->first(); actual->more(i); i = actual->next(i))  {
+    Expression e = actual->nth(i);
+    e->code(table);
+    emit_push(ACC, str);
+    n_args++;
+  }
+
+  expr->code(table);
+// Check for dispatch on void
+  emit_load_imm(T1, get_line_number(), str);
+  emit_move(T3, ACC, str);
+  emit_load_address(ACC, "str_const0", str);
+  emit_beqz(T3, "_dispatch_abort", str);
+  emit_move(ACC, T3, str);
+
+// Jump to dispatch[SELF][index]
+  CgenNodeP cl = table->probe(type_name);
+
+  int method_index = cl->dispatch_table.get_index(name) + 1;
+
+  str << LW << T2<<' ';
+  emit_disptable_ref(type_name, str);
+  str << " + " << method_index * WORD_SIZE<< endl;
+  emit_jalr(T2, str);
+
+  sp_from_fp += n_args;
+
 }
 
 void dispatch_class::code(CgenClassTableP table) {
   ostream &str = table->stream();
 // Push arg1 to argn
+  int n_args = 0;
   for(int i = actual->first(); actual->more(i); i = actual->next(i))  {
     Expression e = actual->nth(i);
     e->code(table);
     emit_push(ACC, str);
+    n_args++;
   }
 
   expr->code(table);
-// Jump to dispatch[SELF][index]
+  // Check for dispatch on void
+  emit_load_imm(T1, get_line_number(), str);
+  emit_move(T3, ACC, str);
+  emit_load_address(ACC, "str_const0", str);
+  emit_beqz(T3, "_dispatch_abort", str);
+  emit_move(ACC, T3, str);
+
+  // Jump to dispatch[SELF][index]
   CgenNodeP cl = table->probe(expr->get_type());
   if(cl->get_name() == SELF_TYPE)
     cl = table->current_class;
-  int method_index = cl->dispatch_table.get_index(name);
-  emit_load(T1, DISPTABLE_OFFSET, ACC, str);
-  emit_load(T1, method_index, T1, str);
-  emit_jalr(T1, str);
+
+  int method_index = cl->dispatch_table.get_index(name) + 1;
+  emit_load(T2, DISPTABLE_OFFSET, ACC, str);
+  emit_load(T2, method_index, T2, str);
+  emit_jalr(T2, str);
+
+  sp_from_fp += n_args;
 }
 
 void cond_class::code(CgenClassTableP table) {
+  ostream &str = table->stream();
+  static int ctr = 0;
+
+  pred->code(table);
+  //Jump if false
+  emit_load(ACC, DEFAULT_OBJFIELDS, ACC, str);
+  str << BEQZ << ACC << " cond_else" << ctr << endl;
+  then_exp->code(table);
+  //Jump to end
+  str << BRANCH << "cond_end" << ctr << endl;
+  
+  str << "\tcond_else" << ctr << LABEL;
+  else_exp->code(table);
+  
+  str << "\tcond_end" << ctr << LABEL;
+  ctr++;
 }
 
 void loop_class::code(CgenClassTableP table) {
+  ostream &str = table->stream();
+  static int ctr = 0;
+  str << "\tloop_start" << ctr << LABEL;
+  pred->code(table);
+  //Jump out of loop if false
+  emit_load(ACC, DEFAULT_OBJFIELDS, ACC, str);
+  str << BEQZ << ACC << " loop_end" << ctr << endl;
+
+  body->code(table);
+  //Jump to loop
+  str << BRANCH << "loop_start" << ctr << endl;
+  
+  str << "\tloop_end" << ctr << LABEL;
+  ctr++;
 }
 
 void typcase_class::code(CgenClassTableP table) {
+    cout<< "NI";
+
 }
 
 void block_class::code(CgenClassTableP table) {
@@ -1126,34 +1298,82 @@ void block_class::code(CgenClassTableP table) {
 }
 
 void let_class::code(CgenClassTableP table) {
-  //TODO: Push on stack and store offset from FP in local_vars
+  ostream &str = table->stream();
+  //Push on stack and store offset from FP in local_vars
+
+  //Default initialization
+  if(typeid(*init) == typeid(no_expr_class) && (type_decl == Str || type_decl == Int || type_decl == Bool)){
+    emit_partial_load_address(ACC, str);
+    emit_protobj_ref(type_decl, str);
+    str << endl;
+  }
+  else
+    init->code(table);
+  //ACC has init value
+  emit_push(ACC, str);
+  table->local_vars.enterscope();
+  table->local_vars.addid(identifier, new int(sp_from_fp));
+  body->code(table);
+  table->local_vars.exitscope();
+  emit_pop_n(1, str);
+
 }
 
 void plus_class::code(CgenClassTableP table) {
+    cout<< "NI";
+
 }
 
 void sub_class::code(CgenClassTableP table) {
+    cout<< "NI";
+
 }
 
 void mul_class::code(CgenClassTableP table) {
+    cout<< "NI";
+
 }
 
 void divide_class::code(CgenClassTableP table) {
+    cout<< "NI";
+
 }
 
 void neg_class::code(CgenClassTableP table) {
+  //~
+    cout<< "NI";
+
 }
 
 void lt_class::code(CgenClassTableP table) {
+    cout<< "NI";
+
 }
 
 void eq_class::code(CgenClassTableP table) {
+  ostream &str = table->stream();
+  e1->code(table);
+  emit_push(ACC, str);
+  e2->code(table);
+  emit_move(T2, ACC, str);
+  emit_pop(T1, str);
+
+  emit_load_bool(ACC, truebool, table->stream());
+  emit_load_bool(A1, falsebool, table->stream());
+
+  emit_jal("equality_test", str);
+
 }
 
 void leq_class::code(CgenClassTableP table) {
+    cout<< "NI";
+
 }
 
 void comp_class::code(CgenClassTableP table) {
+  //not
+    cout<< "NI";
+
 }
 
 void int_const_class::code(CgenClassTableP table)  
@@ -1176,27 +1396,44 @@ void bool_const_class::code(CgenClassTableP table)
 
 void new__class::code(CgenClassTableP table) {
   ostream &str = table->stream();
-  //$a0 = proto
-  emit_partial_load_address(ACC, str);
-  emit_protobj_ref(type_name, str);
-  str << endl;
+  if(type_name == SELF_TYPE)  {
+    emit_move(ACC, SELF, str);
+  }
+  else {
+    //$a0 = proto
+    emit_partial_load_address(ACC, str);
+    emit_protobj_ref(type_name, str);
+    str << endl;
+  }
 
   //jump to Object.copy
   emit_jal("Object.copy", str);
   //Object copy in ACC
 
   //Run class.init
-  str << JAL;
-  emit_init_ref(type_name, str);
-  str << endl;
+  if(type_name == SELF_TYPE)  {
+    emit_load(T1, DISPTABLE_OFFSET, ACC, str);
+    emit_load(T1, 0, T1, str);
+    emit_jalr(T1, str);
+  }
+  else {
+    str << JAL;
+    emit_init_ref(type_name, str);
+    str << endl;
+  }
+  
 
 }
 
 void isvoid_class::code(CgenClassTableP table) {
+  ostream& str = table->stream();
+  e1->code(table);
+  emit_seq(ACC, ACC, ZERO, str);
+  emit_bool_to_Bool(str);
 }
 
 void no_expr_class::code(CgenClassTableP table) {
-  //Do nothing
+  emit_move(ACC, ZERO, table->stream());
 }
 
 void object_class::code(CgenClassTableP table) {
@@ -1218,7 +1455,21 @@ void object_class::code(CgenClassTableP table) {
 
 
 void attr_class::code(CgenClassTableP table) {
+  if(typeid(*init) == typeid(no_expr_class))  {
+    return;
+  }
 //Set up initialization
+  ostream& str = table->stream();
+
+  emit_push(ACC, str);
+  init->code(table);
+
+  int attr_ind = table->current_class->attr_table.get_index(name);
+  emit_move(T1, ACC, str);
+  emit_pop(ACC, str);
+  emit_store(T1, DEFAULT_OBJFIELDS + attr_ind, ACC, str);
+
+
 }
 
 void method_class::code(CgenClassTableP table) {
@@ -1235,13 +1486,13 @@ void method_class::code(CgenClassTableP table) {
   emit_push(SELF, str);
   emit_move(SELF, ACC, str);
 // Push FP on stack
-  emit_push(FP, str);
+  emit_push_FP(str);
 // Set fp to point to stack top
   emit_move(FP, SP, str);
 // Evaluate expression - this will set ACC to return value
   expr->code(table);
 // Restore FP
-  emit_pop(FP, str);
+  emit_pop_FP(str);
 // Restore SELF
   emit_pop(SELF, str);
 // Jump to RA

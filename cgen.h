@@ -98,6 +98,8 @@ public:
    int get_tag() { return class_tag; }
    void code_proto_object(ostream& str);
    void code_methods(CgenClassTableP);
+   void code_init_method(CgenClassTableP);
+   void code_init_attrs(CgenClassTableP);
    void build_envs();
 };
 

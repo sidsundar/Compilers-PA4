@@ -106,5 +106,6 @@
 #define BLEQ     "\tble\t"
 #define BLT      "\tblt\t"
 #define BGT      "\tbgt\t"
-
+#define SEQ      "\tseq\t"
+#define NOT      "\tNOT\t"
 
