@@ -51,7 +51,7 @@ private:
    void set_relations(CgenNodeP nd);
 public:
    CgenNodeP current_class;
-   SymbolTable<Symbol,int> local_vars; 
+   SymbolTable<Symbol,int> local_vars;
    //Store location as offset from fp in #words(-ve for let decl and +ve for actual params)
 
    CgenClassTable(Classes, ostream& str);
@@ -73,13 +73,13 @@ class Environment
 };
 
 class CgenNode : public class__class {
-private: 
+private:
    CgenNodeP parentnd;                        // Parent of class
    List<CgenNode> *children;                  // Children of class
    Basicness basic_status;                    // `Basic' if class is basic
                                               // `NotBasic' otherwise
    int class_tag;
-   
+
 
 public:
    Environment dispatch_table;
@@ -103,9 +103,9 @@ public:
    void build_envs();
 };
 
-class BoolConst 
+class BoolConst
 {
- private: 
+ private:
   int val;
  public:
   BoolConst(int);

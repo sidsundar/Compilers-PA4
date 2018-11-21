@@ -34,7 +34,7 @@ ostream& Entry::print(ostream& s) const
   return s << "{" << str << ", " << len << ", " << index << "}\n";
 }
 
-ostream& operator<<(ostream& s, const Entry& sym) 
+ostream& operator<<(ostream& s, const Entry& sym)
 {
   return s << sym.get_string();
 }
@@ -53,6 +53,11 @@ char *Entry::get_string() const
 int Entry::get_len() const
 {
   return len;
+}
+
+int Entry::get_index() const
+{
+  return index;
 }
 
 // A Symbol is a pointer to an Entry.  Symbols are stored directly
